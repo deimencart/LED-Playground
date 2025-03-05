@@ -58,9 +58,6 @@ Este código permite controlar un aro de LEDs WS2812 usando un **sensor de dista
 - Si la distancia baja de nuevo a `MIN_DIST`, **los LEDs se apagan**.  
 - Después de apagarse, **espera 5 segundos antes de volver a detectar**.  
 
-## 4️⃣ Control del LED Incorporado en el Arduino  
-- Cuando los LEDs **se encienden**, el **LED del Arduino (pin 13) también se enciende**.  
-- Cuando los LEDs **se apagan**, el **LED del Arduino se apaga**.  
 
 ---
 
@@ -82,7 +79,7 @@ Es ideal para **control sin contacto** en lámparas o efectos de iluminación.
 🚀✨ ¡Espero que te sirva!  
 
 ```cpp
-#include <Wire.h>
+#include <Wire.h> 
 #include <FastLED.h>
 #include <Adafruit_VL53L0X.h>
 
@@ -90,22 +87,26 @@ Es ideal para **control sin contacto** en lámparas o efectos de iluminación.
 #define NUM_LEDS    16     // Número de LEDs en el aro
 #define LED_TYPE    WS2812 // Tipo de LED
 #define COLOR_ORDER GRB    // Orden de colores
-#define MIN_BRIGHT  2      // Brillo mínimo
-#define MAX_BRIGHT  255    // Brillo máximo
-#define MIN_DIST    50     // Distancia mínima en mm para encender
+#define MIN_BRIGHT  2      // Brillo mínimo (casi apagado)
+#define MAX_BRIGHT  255    // Brillo máximo (cuando estés lejos)
+#define MIN_DIST    50     // Distancia mínima para encender (mm)
 #define MAX_DIST    300    // Distancia máxima en mm para brillo máximo
-
-#define WAIT_TIME   5000   // Tiempo de espera antes de nueva detección (5s)
-#define HOLD_TIME   5000   // Tiempo para mantener brillo fijo (5s)
-#define BUILTIN_LED 13     // LED incorporado en Arduino (pin 13)
+#define OFF_HOLD_TIME 2000 // Tiempo en ms que la mano debe mantenerse cerca para apagar
+#define RESTART_DELAY 5000 // Tiempo en ms antes de volver a detectar después de apagar
+#define STABLE_HOLD_TIME 5000 // Tiempo en ms que debe mantenerse en una posición para fijar el brillo
+#define IGNORE_TIME 5000  // Tiempo en ms que se ignora la lectura después de fijar el brillo
 
 Adafruit_VL53L0X lox = Adafruit_VL53L0X();
-CRGB leds[NUM_LEDS];
+CRGB leds[NUM_LEDS]; // Arreglo de LEDs
 
-bool isOn = false;         // Estado de los LEDs
-unsigned long lastOffTime = 0;
-unsigned long holdStartTime = 0;
-bool holdingBrightness = false;
+bool isOn = false;   // Estado de los LEDs
+bool brightnessLocked = false; // Indica si el brillo está bloqueado
+int lockedBrightness = 0; // Brillo bloqueado
+int lastDistance = 0; // Última distancia registrada
+unsigned long holdStartTime = 0; // Momento en que la mano se acercó para apagarlos
+unsigned long offTime = 0; // Tiempo en que los LEDs se apagaron
+unsigned long stableStartTime = 0; // Momento en que la distancia fue estable
+unsigned long ignoreUntil = 0; // Tiempo hasta el cual se ignoran lecturas
 
 void setup() {
   Serial.begin(115200);
@@ -117,16 +118,23 @@ void setup() {
   }
 
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.clear();
+  
+  // Iniciar con LEDs apagados
+  FastLED.clear(); 
   FastLED.show();
-
-  pinMode(BUILTIN_LED, OUTPUT);
-  digitalWrite(BUILTIN_LED, LOW); // Apagar LED de Arduino al inicio
 }
 
 void loop() {
-  if (!isOn && millis() - lastOffTime < WAIT_TIME) {
-    return;  // Espera antes de volver a detectar
+  unsigned long currentMillis = millis();
+
+  // Si los LEDs están apagados, esperar 5 segundos antes de volver a leer
+  if (!isOn && offTime != 0 && currentMillis - offTime < RESTART_DELAY) {
+    return;
+  }
+
+  // Si el brillo está bloqueado, ignorar lecturas por IGNORE_TIME
+  if (brightnessLocked && currentMillis < ignoreUntil) {
+    return;
   }
 
   VL53L0X_RangingMeasurementData_t measure;
@@ -136,35 +144,56 @@ void loop() {
     int distance = measure.RangeMilliMeter;
     Serial.print("Distancia: "); Serial.println(distance);
 
-    if (!isOn && distance <= MIN_DIST) {
+    if (!isOn && distance < MIN_DIST) {
+      // Si los LEDs están apagados y la mano está cerca, encenderlos
       isOn = true;
-      FastLED.setBrightness(MIN_BRIGHT);
-      setWhite();
-      digitalWrite(BUILTIN_LED, HIGH);
-      holdStartTime = millis(); 
-      holdingBrightness = false;
+      brightnessLocked = false; // Resetear bloqueo
+      Serial.println("💡 Encendiendo LEDs");
     }
 
     if (isOn) {
-      if (distance <= MIN_DIST) {
-        isOn = false;
-        FastLED.clear();
-        FastLED.show();
-        digitalWrite(BUILTIN_LED, LOW);
-        lastOffTime = millis(); // Marca tiempo de apagado
-      } else {
-        int brightness = map(distance, MIN_DIST, MAX_DIST, MIN_BRIGHT, MAX_BRIGHT);
-        brightness = constrain(brightness, MIN_BRIGHT, MAX_BRIGHT);
-
-        if (!holdingBrightness) {
-          FastLED.setBrightness(brightness);
+      if (distance < MIN_DIST) {
+        if (holdStartTime == 0) {
+          holdStartTime = currentMillis; // Empieza a contar el tiempo
+        } else if (currentMillis - holdStartTime >= OFF_HOLD_TIME) {
+          // Si la mano se mantiene cerca por el tiempo definido, apagar LEDs
+          isOn = false;
+          holdStartTime = 0; // Resetear el contador
+          offTime = currentMillis; // Guardar el tiempo de apagado
+          Serial.println("💤 Apagando LEDs");
+          FastLED.clear();
           FastLED.show();
-
-          if (millis() - holdStartTime >= HOLD_TIME) {
-            holdingBrightness = true;
-            lastOffTime = millis(); // Bloquea lecturas por 5s
-          }
+          return;
         }
+      } else {
+        holdStartTime = 0; // Resetear el tiempo si la mano se aleja
+
+        // Si la distancia cambia significativamente, resetear estabilidad
+        if (abs(distance - lastDistance) > 5) {
+          stableStartTime = currentMillis;
+        }
+
+        // Si la mano se mantiene estable por STABLE_HOLD_TIME, fijar el brillo
+        if (!brightnessLocked && currentMillis - stableStartTime >= STABLE_HOLD_TIME) {
+          brightnessLocked = true;
+          lockedBrightness = FastLED.getBrightness();
+          ignoreUntil = currentMillis + IGNORE_TIME; // Ignorar lecturas por IGNORE_TIME
+          Serial.println("🔒 Brillo fijado, ignorando lecturas por 5 segundos");
+        }
+
+        if (!brightnessLocked) {
+          // Ajustar brillo según la distancia
+          int brightness = map(distance, MIN_DIST, MAX_DIST, MIN_BRIGHT, MAX_BRIGHT);
+          brightness = constrain(brightness, MIN_BRIGHT, MAX_BRIGHT);
+          FastLED.setBrightness(brightness);
+        } else {
+          // Mantener el brillo fijo
+          FastLED.setBrightness(lockedBrightness);
+        }
+
+        setWhite();
+        FastLED.show();
+        lastDistance = distance; // Guardar última distancia
       }
     }
   } else {
@@ -176,7 +205,7 @@ void loop() {
 
 void setWhite() {
   for (int i = 0; i < NUM_LEDS; i++) {
-    leds[i] = CRGB(255, 255, 255);
+    leds[i] = CRGB(255, 255, 255); // Blanco
   }
-  FastLED.show();
 }
+
