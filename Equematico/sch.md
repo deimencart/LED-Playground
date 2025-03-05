@@ -1,5 +1,6 @@
 ## 🖼️ Esquema de Conexión
-![Conexión Arduino VL53L0X y LED Ring](./mnt/data/A_wiring_diagram_showing_the_connections_for_an_Ar.png)
+![Conexión Arduino VL53L0X y LED Ring](![image](https://github.com/user-attachments/assets/ee99bb0d-afe7-45c7-8f97-68d404ab5f92)
+)
 ## 🔌 Esquema de Conexiones
 
 ### 📟 **Anillo de LEDs WS2812**
