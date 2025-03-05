@@ -39,7 +39,34 @@ Este código permite controlar un aro de LEDs WS2812 usando un **sensor de dista
 ---
 
 ## 📜 Código
-
+📖 Explicación del Código
+1️⃣ Inicialización y Configuración
+Se incluyen las librerías necesarias (Wire.h, FastLED.h, Adafruit_VL53L0X.h).
+Se define el pin del LED integrado (pin 13).
+Se configuran los LEDs y el sensor VL53L0X.
+2️⃣ Variables Clave
+isOn: Indica si los LEDs están encendidos.
+lastOffTime: Guarda el tiempo en que los LEDs se apagaron.
+holdStartTime: Guarda el tiempo en que los LEDs comenzaron a brillar.
+holdingBrightness: Indica si el brillo se mantiene fijo.
+3️⃣ Control de Encendido y Apagado
+Si la distancia es menor a MIN_DIST (50 mm), se encienden los LEDs y el LED del Arduino.
+Si se mantiene la mano en la misma posición por 5 segundos, se congela el brillo.
+Si la distancia baja de nuevo a MIN_DIST, los LEDs se apagan.
+Después de apagarse, espera 5 segundos antes de volver a detectar.
+4️⃣ Control del LED Incorporado en el Arduino
+Cuando los LEDs se encienden, el LED del Arduino (pin 13) también se enciende.
+Cuando los LEDs se apagan, el LED del Arduino se apaga.
+🔥 Paso a Paso para Implementarlo
+Conecta el VL53L0X y el aro de LEDs según la tabla.
+Carga el código en el Arduino usando el IDE de Arduino.
+Abre el Monitor Serial para ver la distancia detectada (opcional).
+Acerca la mano a menos de 50 mm para encender los LEDs.
+Mueve la mano para cambiar el brillo o mantenla para fijar la intensidad.
+Si bajas la mano nuevamente a menos de 50 mm, los LEDs se apagan.
+Después de apagarse, espera 5 segundos antes de volver a encender.
+✅ Conclusión
+Este código permite encender LEDs con control de brillo progresivo, un tiempo de espera tras apagarse, y un LED en la placa para indicar cuando están encendidos. Es ideal para control sin contacto en lámparas o efectos de iluminación.
 ```cpp
 #include <Wire.h>
 #include <FastLED.h>
